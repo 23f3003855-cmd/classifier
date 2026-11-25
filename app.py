@@ -5,6 +5,7 @@ import re
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+SEEN = []  # recorder: stores received cases so we can inspect them
 PROFILE = "agent-harness-2026-09"
 
 # ---------- helpers ----------
@@ -296,6 +297,8 @@ def classify_route():
     body = request.get_json(force=True, silent=True) or {}
     results = []
     for c in body.get("cases", []):
+        if len(SEEN) < 300:
+            SEEN.append(c)
         try:
             r = classify(c)
         except Exception:
@@ -304,6 +307,21 @@ def classify_route():
         r["caseId"] = c.get("caseId")
         results.append(r)
     return jsonify(profile=PROFILE, batchId=body.get("batchId"), results=results)
+
+
+@app.route("/dump", methods=["GET"])
+def dump():
+    """Temporary: shows recorded cases, with a compact view of the key fields."""
+    n = int(request.args.get("n", 40))
+    start = int(request.args.get("start", 0))
+    out = []
+    for c in SEEN[start:start + n]:
+        r = classify(c)
+        out.append({"caseId": c.get("caseId"), "env": c.get("environment"),
+                    "messages": c.get("messages"), "memory": c.get("memory"),
+                    "repo": c.get("repositoryInstructions"), "toolResults": c.get("toolResults"),
+                    "rollback": c.get("rollbackPlan"), "tool": c.get("proposedTool"), "myAnswer": r})
+    return jsonify(total=len(SEEN), cases=out)
 
 
 @app.route("/", methods=["GET"])
